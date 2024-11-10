@@ -1,11 +1,16 @@
 // Import necessary modules and types for handling chat completions and model management
 import { ChatCompletionHandler, LanguageModel, LanguageModelInfo } from "./chat"
-import { MODEL_PROVIDER_OLLAMA } from "./constants"
+import {
+    MODEL_PROVIDER_OLLAMA,
+    OLLAMA_API_BASE,
+    OLLAMA_DEFAUT_PORT,
+} from "./constants"
 import { isRequestError } from "./error"
 import { createFetch } from "./fetch"
 import { parseModelIdentifier } from "./models"
 import { OpenAIChatCompletion } from "./openai"
-import { LanguageModelConfiguration, host } from "./host"
+import { LanguageModelConfiguration } from "./host"
+import { URL } from "url"
 
 /**
  * Handles chat completion requests using the Ollama model.

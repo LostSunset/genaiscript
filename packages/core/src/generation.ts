@@ -87,6 +87,7 @@ export interface GenerationOptions
     extends ChatCompletionsOptions,
         ModelOptions,
         EmbeddingsModelOptions,
+        ContentSafetyOptions,
         ScriptRuntimeOptions {
     inner: boolean // Indicates if the process is an inner operation
     cancellationToken?: CancellationToken // Token to cancel the operation
@@ -94,6 +95,7 @@ export interface GenerationOptions
     trace: MarkdownTrace // Trace information for debugging or logging
     maxCachedTemperature?: number // Maximum temperature for caching purposes
     maxCachedTopP?: number // Maximum top-p value for caching
+    fallbackTools?: boolean // Disables model tools    
     label?: string // Optional label for the operation
     cliInfo?: {
         files: string[] // Information about files in the CLI context

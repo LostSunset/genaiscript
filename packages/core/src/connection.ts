@@ -16,13 +16,16 @@ import {
     MODEL_PROVIDER_LLAMAFILE,
     MODEL_PROVIDER_OLLAMA,
     MODEL_PROVIDER_OPENAI,
-    OLLAMA_API_BASE,
     OPENAI_API_BASE,
     PLACEHOLDER_API_BASE,
     PLACEHOLDER_API_KEY,
     MODEL_PROVIDER_AZURE_SERVERLESS_OPENAI,
+    MODEL_PROVIDER_HUGGINGFACE,
+    HUGGINGFACE_API_BASE,
+    OLLAMA_API_BASE,
+    OLLAMA_DEFAUT_PORT,
 } from "./constants"
-import { fileExists, readText, tryReadText, writeText } from "./fs"
+import { fileExists, readText, writeText } from "./fs"
 import {
     OpenAIAPIType,
     host,
@@ -31,6 +34,34 @@ import {
 } from "./host"
 import { parseModelIdentifier } from "./models"
 import { normalizeFloat, trimTrailingSlash } from "./util"
+
+export function ollamaParseHostVariable(env: Record<string, string>) {
+    const s = (
+        env.OLLAMA_HOST ||
+        env.OLLAMA_API_BASE ||
+        OLLAMA_API_BASE
+    )?.trim()
+    const ipm =
+        /^(?<address>(localhost|\d+\.\d+\.\d+\.\d+))(:(?<port>\d+))?$/i.exec(s)
+    if (ipm)
+        return `http://${ipm.groups.address}:${ipm.groups.port || OLLAMA_DEFAUT_PORT}`
+    const url = new URL(s)
+    return url.href
+}
+
+export function findEnvVar(
+    env: Record<string, string>,
+    prefix: string,
+    names: string[]
+): { name: string; value: string } {
+    for (const name of names) {
+        const pname = prefix + name
+        const value =
+            env[pname] || env[pname.toLowerCase()] || env[pname.toUpperCase()]
+        if (value !== undefined) return { name: pname, value }
+    }
+    return undefined
+}
 
 export async function parseDefaultsFromEnv(env: Record<string, string>) {
     if (env.GENAISCRIPT_DEFAULT_MODEL)
@@ -52,6 +83,9 @@ export async function parseTokenFromEnv(
     const { provider, model, tag } = parseModelIdentifier(
         modelId ?? host.defaultModelOptions.model
     )
+    const TOKEN_SUFFIX = ["_API_KEY", "_API_TOKEN", "_TOKEN", "_KEY"]
+    const BASE_SUFFIX = ["_API_BASE", "_API_ENDPOINT", "_BASE", "_ENDPOINT"]
+
     if (provider === MODEL_PROVIDER_OPENAI) {
         if (env.OPENAI_API_KEY || env.OPENAI_API_BASE || env.OPENAI_API_TYPE) {
             const token = env.OPENAI_API_KEY ?? ""
@@ -276,6 +310,36 @@ export async function parseTokenFromEnv(
         }
     }
 
+    if (provider === MODEL_PROVIDER_OLLAMA) {
+        const host = ollamaParseHostVariable(env)
+        const base = cleanApiBase(host)
+        return {
+            provider,
+            model,
+            base,
+            token: "ollama",
+            type: "openai",
+            source: "env: OLLAMA_HOST",
+        }
+    }
+
+    if (provider === MODEL_PROVIDER_HUGGINGFACE) {
+        const prefix = "HUGGINGFACE"
+        const token = findEnvVar(env, prefix, TOKEN_SUFFIX)
+        const base =
+            findEnvVar(env, prefix, BASE_SUFFIX)?.value || HUGGINGFACE_API_BASE
+        if (!URL.canParse(base)) throw new Error(`${base} must be a valid URL`)
+        if (!token?.value) throw new Error("HUGGINGFACE_API_KEY missing")
+        return {
+            base,
+            token: token?.value,
+            provider,
+            model,
+            type: "openai",
+            source: "env: HUGGINGFACE_API_...",
+        } satisfies LanguageModelConfiguration
+    }
+
     const prefixes = [
         tag ? `${provider}_${model}_${tag}` : undefined,
         provider ? `${provider}_${model}` : undefined,
@@ -285,11 +349,11 @@ export async function parseTokenFromEnv(
         .filter((p) => p)
         .map((p) => p.toUpperCase().replace(/[^a-z0-9]+/gi, "_"))
     for (const prefix of prefixes) {
-        const modelKey = prefix + "_API_KEY"
-        const modelBase = prefix + "_API_BASE"
-        if (env[modelKey] || env[modelBase]) {
-            const token = env[modelKey] ?? ""
-            const base = trimTrailingSlash(env[modelBase])
+        const modelKey = findEnvVar(env, prefix, TOKEN_SUFFIX)
+        const modelBase = findEnvVar(env, prefix, BASE_SUFFIX)
+        if (modelKey || modelBase) {
+            const token = modelKey?.value || ""
+            const base = trimTrailingSlash(modelBase?.value)
             const version = env[prefix + "_API_VERSION"]
             const source = `env: ${prefix}_API_...`
             const type: OpenAIAPIType = "openai"
@@ -303,18 +367,7 @@ export async function parseTokenFromEnv(
                 type,
                 version,
                 source,
-            }
-        }
-    }
-
-    if (provider === MODEL_PROVIDER_OLLAMA) {
-        return {
-            provider,
-            model,
-            base: OLLAMA_API_BASE,
-            token: "ollama",
-            type: "openai",
-            source: "default",
+            } satisfies LanguageModelConfiguration
         }
     }
 
@@ -352,10 +405,17 @@ export async function parseTokenFromEnv(
     return undefined
 
     function cleanAzureBase(b: string) {
-        if (!b || !/\.openai\.azure\.com/i.test(b)) return b
+        if (!b) return b
         b =
             trimTrailingSlash(b.replace(/\/openai\/deployments.*$/, "")) +
             `/openai/deployments`
+        return b
+    }
+
+    function cleanApiBase(b: string) {
+        if (!b) return b
+        b = trimTrailingSlash(b)
+        if (!/\/v1$/.test(b)) b += "/v1"
         return b
     }
 }

@@ -54,9 +54,14 @@ interface PromptDefinition {
      * Groups template in UI
      */
     group?: string
+
+    /**
+     * List of tools defined in the script
+     */
+    defTools?: { id: string; description: string; kind: "tool" | "agent" }[]
 }
 
-interface PromptLike extends PromptDefinition {
+interface PromptLike extends PromptDefinition, PromptToolsDefinition {
     /**
      * File where the prompt comes from (if any).
      */
@@ -125,6 +130,8 @@ type ModelType = OptionsOrString<
     | "github:gpt-4o-mini"
     | "github:o1-mini"
     | "github:o1-preview"
+    | "github:AI21-Jamba-1.5-Large"
+    | "github:AI21-Jamba-1-5-Mini"
     | "azure:gpt-4o"
     | "azure:gpt-4o-mini"
     | "ollama:phi3.5"
@@ -137,6 +144,7 @@ type ModelType = OptionsOrString<
     | "anthropic:claude-2.1"
     | "anthropic:claude-2.0"
     | "anthropic:claude-instant-1.2"
+    | "huggingface:microsoft/Phi-3-mini-4k-instruct"
 >
 
 type ModelSmallType = OptionsOrString<
@@ -145,6 +153,7 @@ type ModelSmallType = OptionsOrString<
     | "azure:gpt-4o-mini"
     | "openai:gpt-3.5-turbo"
     | "github:Phi-3-5-mini-instruct"
+    | "github:AI21-Jamba-1-5-Mini"
 >
 
 interface ModelConnectionOptions {
@@ -170,6 +179,16 @@ interface ModelOptions extends ModelConnectionOptions {
      * @default 0.2
      */
     temperature?: number
+
+    /**
+     * A list of keywords that should be found in the output.
+     */
+    choices?: ElementOrArray<string>
+
+    /**
+     * Returns the log probabilities of the each tokens. Not supported in all models.
+     */
+    logprobs?: boolean
 
     /**
      * Specifies the type of output. Default is plain text.
@@ -274,14 +293,16 @@ interface ScriptRuntimeOptions extends LineNumberingOptions {
     secrets?: string[]
 }
 
+type PromptJSONParameterType<T> = T & { required?: boolean }
+
 type PromptParameterType =
     | string
     | number
     | boolean
     | object
-    | JSONSchemaNumber
-    | JSONSchemaString
-    | JSONSchemaBoolean
+    | PromptJSONParameterType<JSONSchemaNumber>
+    | PromptJSONParameterType<JSONSchemaString>
+    | PromptJSONParameterType<JSONSchemaBoolean>
 type PromptParametersSchema = Record<
     string,
     PromptParameterType | PromptParameterType[]
@@ -380,11 +401,16 @@ interface PromptTest {
     asserts?: PromptAssertion | PromptAssertion[]
 }
 
+interface ContentSafetyOptions {
+    contentSafety?: ContentSafetyProvider
+}
+
 interface PromptScript
     extends PromptLike,
         ModelOptions,
         PromptSystemOptions,
         EmbeddingsModelOptions,
+        ContentSafetyOptions,
         ScriptRuntimeOptions {
     /**
      * Additional template parameters that will populate `env.vars`
@@ -416,11 +442,6 @@ interface PromptScript
      * Set if this is a system prompt.
      */
     isSystem?: boolean
-
-    /**
-     * List of tools defined in the script
-     */
-    defTools?: { id: string; description: string; kind: "tool" | "agent" }[]
 }
 
 /**
@@ -749,12 +770,6 @@ interface ExpansionVariables {
     generator: ChatGenerationContext
 
     /**
-     * current prompt template
-     * @deprecated use `meta` instead
-     */
-    template: PromptDefinition & ModelConnectionOptions
-
-    /**
      * Metadata of the top-level prompt
      */
     meta: PromptDefinition & ModelConnectionOptions
@@ -778,7 +793,6 @@ type PromptSystemArgs = Omit<
     | "responseSchema"
     | "files"
     | "modelConcurrency"
-    | "parameters"
 >
 
 type StringLike = string | WorkspaceFile | WorkspaceFile[]
@@ -843,11 +857,7 @@ interface RangeOptions {
     lineEnd?: number
 }
 
-interface DefOptions
-    extends FenceOptions,
-        ContextExpansionOptions,
-        DataFilter,
-        RangeOptions {
+interface FileFilterOptions {
     /**
      * Filename filter based on file suffix. Case insensitive.
      */
@@ -857,7 +867,23 @@ interface DefOptions
      * Filename filter using glob syntax.
      */
     glob?: ElementOrArray<string>
+}
 
+interface ContentSafetyOptions {
+    /**
+     * Runs the default content safety validator
+     * to prevent prompt injection.
+     */
+    detectPromptInjection?: "always" | "available" | boolean
+}
+
+interface DefOptions
+    extends FenceOptions,
+        ContextExpansionOptions,
+        DataFilter,
+        RangeOptions,
+        FileFilterOptions,
+        ContentSafetyOptions {
     /**
      * By default, throws an error if the value in def is empty.
      */
@@ -979,6 +1005,12 @@ interface DataFrame {
     validation?: FileEditValidation
 }
 
+interface LogProb {
+    token: string
+    logprob?: number
+    entropy?: number
+}
+
 interface RunPromptResult {
     messages: ChatCompletionMessageParam[]
     text: string
@@ -1001,6 +1033,8 @@ interface RunPromptResult {
     edits?: Edits[]
     changelogs?: ChangeLog[]
     model?: ModelType
+    logprobs?: LogProb[]
+    perplexity?: number
 }
 
 /**
@@ -1106,6 +1140,10 @@ type TokenDecoder = (lines: Iterable<number>) => string
 
 interface Tokenizer {
     model: string
+    /**
+     * Number of tokens
+     */
+    size?: number
     encode: TokenEncoder
     decode: TokenDecoder
 }
@@ -1824,7 +1862,7 @@ interface GitHub {
 
     /**
      * Gets the details of a GitHub pull request
-     * @param pull_number pull request number. Default resolves the pull requeset for the current branch.
+     * @param pull_number pull request number. Default resolves the pull request for the current branch.
      */
     getPullRequest(pull_number?: number): Promise<GitHubPullRequest>
 
@@ -1988,18 +2026,19 @@ interface CSV {
 interface ContentSafety {
     /**
      * Scans text for the risk of a User input attack on a Large Language Model.
+     * If not supported, the method is not defined.
      */
-    detectPromptInjection(
+    detectPromptInjection?(
         content: Awaitable<
             ElementOrArray<string> | ElementOrArray<WorkspaceFile>
         >
     ): Promise<{ attackDetected: boolean; filename?: string; chunk?: string }>
-
     /**
      * Analyzes text for harmful content.
+     * If not supported, the method is not defined.
      * @param content
      */
-    detectHarmfulContent(
+    detectHarmfulContent?(
         content: Awaitable<
             ElementOrArray<string> | ElementOrArray<WorkspaceFile>
         >
@@ -2164,7 +2203,10 @@ interface WriteTextOptions extends ContextExpansionOptions {
 
 type PromptGenerator = (ctx: ChatGenerationContext) => Awaitable<unknown>
 
-interface PromptGeneratorOptions extends ModelOptions, PromptSystemOptions {
+interface PromptGeneratorOptions
+    extends ModelOptions,
+        PromptSystemOptions,
+        ContentSafetyOptions {
     /**
      * Label for trace
      */
@@ -2288,7 +2330,7 @@ interface DefAgentOptions extends Omit<PromptGeneratorOptions, "label"> {
     disableMemory?: boolean
 
     /**
-     * Diable memory query on each query (let the agent call the tool)
+     * Disable memory query on each query (let the agent call the tool)
      */
     disableMemoryQuery?: boolean
 }
@@ -3075,7 +3117,21 @@ interface LanguageModelHost {
     resolveLanguageModel(modelId?: string): Promise<LanguageModelReference>
 }
 
-interface PromptHost extends ShellHost, UserInterfaceHost, LanguageModelHost {
+type ContentSafetyProvider = "azure"
+
+interface ContentSafetyHost {
+    /**
+     * Resolve a content safety client
+     * @param id safety detection project
+     */
+    contentSafety(id?: ContentSafetyProvider): Promise<ContentSafety>
+}
+
+interface PromptHost
+    extends ShellHost,
+        UserInterfaceHost,
+        LanguageModelHost,
+        ContentSafetyHost {
     /**
      * Opens a in-memory key-value cache for the given cache name. Entries are dropped when the cache grows too large.
      * @param cacheName
@@ -3176,7 +3232,6 @@ interface PromptContext extends ChatGenerationContext {
     path: Path
     parsers: Parsers
     retrieval: Retrieval
-    contentSafety: ContentSafetyClient
     /**
      * @deprecated Use `workspace` instead
      */

@@ -18,6 +18,7 @@ export const AZURE_AI_INFERENCE_TOKEN_SCOPES = Object.freeze([
 ])
 export const AZURE_TOKEN_EXPIRATION = 59 * 60_000 // 59 minutes
 
+export const TOOL_URL = "https://microsoft.github.io/genaiscript"
 export const TOOL_ID = "genaiscript"
 export const GENAISCRIPT_FOLDER = "." + TOOL_ID
 export const CLI_JS = TOOL_ID + ".cjs"
@@ -124,11 +125,13 @@ export const PROMPT_FENCE = "```"
 export const MARKDOWN_PROMPT_FENCE = "`````"
 
 export const OPENAI_API_BASE = "https://api.openai.com/v1"
+export const OLLAMA_DEFAUT_PORT = 11434
 export const OLLAMA_API_BASE = "http://localhost:11434/v1"
 export const LLAMAFILE_API_BASE = "http://localhost:8080/v1"
 export const LOCALAI_API_BASE = "http://localhost:8080/v1"
 export const LITELLM_API_BASE = "http://localhost:4000"
 export const ANTHROPIC_API_BASE = "https://api.anthropic.com"
+export const HUGGINGFACE_API_BASE = "https://api-inference.huggingface.co/v1"
 
 export const PROMPTFOO_CACHE_PATH = ".genaiscript/cache/tests"
 export const PROMPTFOO_CONFIG_DIR = ".genaiscript/config/tests"
@@ -152,8 +155,14 @@ export const MODEL_PROVIDER_LITELLM = "litellm"
 export const MODEL_PROVIDER_AICI = "aici"
 export const MODEL_PROVIDER_CLIENT = "client"
 export const MODEL_PROVIDER_ANTHROPIC = "anthropic"
+export const MODEL_PROVIDER_HUGGINGFACE = "huggingface"
 
 export const TRACE_FILE_PREVIEW_MAX_LENGTH = 240
+
+export const OPENROUTER_API_CHAT_URL =
+    "https://openrouter.ai/api/v1/chat/completions"
+export const OPENROUTER_SITE_URL_HEADER = "HTTP-Referer"
+export const OPENROUTER_SITE_NAME_HEADER = "X-Title"
 
 export const GITHUB_MODELS_BASE = "https://models.inference.ai.azure.com"
 
@@ -181,7 +190,11 @@ export const DOCS_CONFIGURATION_AICI_URL =
     "https://microsoft.github.io/genaiscript/reference/scripts/aici/"
 export const DOCS_CONFIGURATION_ANTHROPIC_URL =
     "https://microsoft.github.io/genaiscript/getting-started/configuration/#anthropic"
-export const DOCS_CONFIGURATION_CONTENT_SAFETY_URL = "https://microsoft.github.io/genaiscript/reference/scripts/content-safety"
+export const DOCS_CONFIGURATION_HUGGINGFACE_URL =
+    "https://microsoft.github.io/genaiscript/getting-started/configuration/#huggingface"
+export const DOCS_CONFIGURATION_CONTENT_SAFETY_URL =
+    "https://microsoft.github.io/genaiscript/reference/scripts/content-safety"
+export const DOCS_DEF_FILES_IS_EMPTY_URL = "https://microsoft.github.io/genaiscript/reference/scripts/context/#empty-files"
 
 export const MODEL_PROVIDERS = Object.freeze([
     {
@@ -225,14 +238,14 @@ export const MODEL_PROVIDERS = Object.freeze([
         url: DOCS_CONFIGURATION_LITELLM_URL,
     },
     {
-        id: MODEL_PROVIDER_AICI,
-        detail: "AICI controller",
-        url: DOCS_CONFIGURATION_AICI_URL,
-    },
-    {
         id: MODEL_PROVIDER_ANTHROPIC,
         detail: "Anthropic models",
         url: DOCS_CONFIGURATION_ANTHROPIC_URL,
+    },
+    {
+        id: MODEL_PROVIDER_HUGGINGFACE,
+        detail: "Hugging Face models",
+        url: DOCS_CONFIGURATION_HUGGINGFACE_URL,
     },
 ])
 
@@ -303,7 +316,7 @@ export const PROMISE_QUEUE_CONCURRENCY_DEFAULT = 16
 export const GITHUB_REST_API_CONCURRENCY_LIMIT = 8
 export const GITHUB_REST_PAGE_DEFAULT = 10
 
-export const TOKEN_TRUNCATION_THRESHOLD = 128
+export const TOKEN_TRUNCATION_THRESHOLD = 16
 
 export const GIT_IGNORE_GENAI = ".gitignore.genai"
 export const CLI_ENV_VAR_RX = /^genaiscript_var_/i
@@ -314,8 +327,12 @@ export const MAX_TOOL_CONTENT_TOKENS = 4000
 
 export const AGENT_MEMORY_CACHE_NAME = "agent_memory"
 
-export const LLM_TAG_MISSING_INFO = "MISSING_INFO"
-export const LLM_TAG_NO_ANSWER = "NO_ANSWER"
-
 export const AZURE_CONTENT_SAFETY_PROMPT_SHIELD_MAX_LENGTH = 9000
 export const AZURE_CONTENT_SAFETY_PROMPT_SHIELD_MAX_DOCUMENTS = 9000
+
+export const TOKEN_MISSING_INFO = "<MISSING_INFO>"
+export const TOKEN_NO_ANSWER = "<NO_ANSWER>"
+
+export const CHOICE_LOGIT_BIAS = 5
+
+export const SANITIZED_PROMPT_INJECTION = "...prompt injection detected, content removed..."

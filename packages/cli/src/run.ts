@@ -1,6 +1,6 @@
 import { capitalize } from "inflection"
-import { resolve, join, relative, dirname } from "node:path"
-import { consoleColors, isQuiet, wrapColor } from "./log"
+import path, { resolve, join, relative, dirname } from "node:path"
+import { consoleColors, isQuiet, wrapColor, wrapRgbColor } from "./log"
 import { emptyDir, ensureDir, appendFileSync, exists } from "fs-extra"
 import { convertDiagnosticsToSARIF } from "./sarif"
 import { buildProject } from "./build"
@@ -81,6 +81,7 @@ import { GenerationStats } from "../../core/src/usage"
 import { traceAgentMemory } from "../../core/src/agent"
 import { appendFile } from "node:fs/promises"
 import { parseOptionsVars } from "./vars"
+import { logprobColor } from "../../core/src/logprob"
 
 async function setupTraceWriting(trace: MarkdownTrace, filename: string) {
     logVerbose(`trace: ${filename}`)
@@ -101,6 +102,23 @@ async function setupTraceWriting(trace: MarkdownTrace, filename: string) {
     return filename
 }
 
+async function ensureDotGenaiscriptPath() {
+    const dir = dotGenaiscriptPath(".")
+    if (await exists(dir)) return
+
+    await ensureDir(dir)
+    await writeFile(
+        path.join(dir, ".gitattributes"),
+        `# avoid merge issues and ignore files in diffs
+*.json -diff merge=ours linguist-generated
+*.jsonl -diff merge=ours linguist-generated        
+*.js -diff merge=ours linguist-generated
+`,
+        { encoding: "utf-8" }
+    )
+    await writeFile(path.join(dir, ".gitignore"), "*\n", { encoding: "utf-8" })
+}
+
 export async function runScriptWithExitCode(
     scriptId: string,
     files: string[],
@@ -108,6 +126,7 @@ export async function runScriptWithExitCode(
         TraceOptions &
         CancellationOptions
 ) {
+    await ensureDotGenaiscriptPath()
     const runRetry = Math.max(1, normalizeInt(options.runRetry) || 1)
     let exitCode = -1
     for (let r = 0; r < runRetry; ++r) {
@@ -179,6 +198,8 @@ export async function runScript(
     const cacheName = options.cacheName
     const cancellationToken = options.cancellationToken
     const jsSource = options.jsSource
+    const fallbackTools = !!options.fallbackTools
+    const logprobs = options.logprobs
 
     if (options.model) host.defaultModelOptions.model = options.model
     if (options.smallModel)
@@ -293,9 +314,20 @@ export async function runScript(
                                 ? CONSOLE_TOKEN_INNER_COLORS
                                 : CONSOLE_TOKEN_COLORS
                             for (const token of responseTokens) {
-                                tokenColor = (tokenColor + 1) % colors.length
-                                const c = colors[tokenColor]
-                                process.stdout.write(wrapColor(c, token))
+                                if (token.logprob !== undefined) {
+                                    const c = wrapRgbColor(
+                                        logprobColor(token),
+                                        token.token
+                                    )
+                                    process.stdout.write(c)
+                                } else {
+                                    tokenColor =
+                                        (tokenColor + 1) % colors.length
+                                    const c = colors[tokenColor]
+                                    process.stdout.write(
+                                        wrapColor(c, token.token)
+                                    )
+                                }
                             }
                         } else {
                             if (!inner) process.stdout.write(responseChunk)
@@ -333,6 +365,8 @@ export async function runScript(
             maxDelay,
             vars,
             trace,
+            fallbackTools,
+            logprobs,
             cliInfo: {
                 files,
             },
@@ -344,7 +378,6 @@ export async function runScript(
         logError(err)
         return fail("runtime error", RUNTIME_ERROR_CODE)
     }
-    if (!isQuiet) logVerbose("") // force new line
 
     await aggregateResults(scriptId, outTrace, stats, result)
     await traceAgentMemory(trace)
@@ -444,7 +477,6 @@ export async function runScript(
                 )
         }
     } else {
-        logVerbose("")
         if (options.json && result !== undefined)
             console.log(JSON.stringify(result, null, 2))
         if (options.yaml && result !== undefined)
